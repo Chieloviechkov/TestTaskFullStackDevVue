@@ -33,9 +33,8 @@ export default defineComponent({
     // Constants for mosaic and animation configuration
     const mosaicSize = 400;
     const canvasSize = mosaicSize * 1.5;
-    const expansionFactor = 0.5;
-    const centerOffset = (canvasSize - mosaicSize) / 2;
     const period = 5000; // Animation period in ms
+    const finalScale = 4; // Final scaling factor (scale the square 4 times)
 
     // Ref for canvas element
     const canvas = ref<HTMLCanvasElement | null>(null);
@@ -47,7 +46,7 @@ export default defineComponent({
 
     /*
       Generates a random bright color.
-     */
+    */
     function getRandomColor(): string {
       const r = Math.floor(Math.random() * 200 + 55);
       const g = Math.floor(Math.random() * 200 + 55);
@@ -57,7 +56,7 @@ export default defineComponent({
 
     /*
       Computes the centroid (average point) of given vertices.
-     */
+    */
     function computeCentroid(vertices: Point[]): Point {
       const { sumX, sumY } = vertices.reduce(
         (acc, pt) => ({ sumX: acc.sumX + pt.x, sumY: acc.sumY + pt.y }),
@@ -68,7 +67,7 @@ export default defineComponent({
 
     /*
       Creates the initial square polygon covering the mosaic area.
-     */
+    */
     function createInitialPolygon(): PolygonData {
       const verts: Point[] = [
         { x: 0, y: 0 },
@@ -86,30 +85,46 @@ export default defineComponent({
     }
 
     /*
-      Returns a random point inside the mosaic with a margin.
-     */
-    function getRandomInternalPoint(): Point {
-      const margin = mosaicSize * 0.1;
-      return {
-        x: margin + Math.random() * (mosaicSize - 2 * margin),
-        y: margin + Math.random() * (mosaicSize - 2 * margin)
-      };
+      Returns a random point on the border of the square.
+    */
+    function getRandomBorderPoint(): Point {
+      const side = Math.floor(Math.random() * 4);
+      let x = 0, y = 0;
+      switch (side) {
+        case 0: // top side
+          x = Math.random() * mosaicSize;
+          y = 0;
+          break;
+        case 1: // right side
+          x = mosaicSize;
+          y = Math.random() * mosaicSize;
+          break;
+        case 2: // bottom side
+          x = Math.random() * mosaicSize;
+          y = mosaicSize;
+          break;
+        case 3: // left side
+          x = 0;
+          y = Math.random() * mosaicSize;
+          break;
+      }
+      return { x, y };
     }
 
     /*
       Creates an array of random line segments that will be used to cut the polygon.
+      Each line is defined by two random points on the border of the square.
       @param numLines - Number of random lines to generate.
-     */
+    */
     function createRandomLines(numLines: number): LineSegment[] {
       const result: LineSegment[] = [];
       for (let i = 0; i < numLines; i++) {
-        const start = getRandomInternalPoint();
-        const angle = Math.random() * Math.PI * 2;
-        const length = mosaicSize * 1.5;
-        const end = {
-          x: start.x + Math.cos(angle) * length,
-          y: start.y + Math.sin(angle) * length
-        };
+        const start = getRandomBorderPoint();
+        let end = getRandomBorderPoint();
+        // Ensure the two points are not identical
+        while (start.x === end.x && start.y === end.y) {
+          end = getRandomBorderPoint();
+        }
         result.push({ start, end });
       }
       return result;
@@ -118,7 +133,7 @@ export default defineComponent({
     /*
       Determines which side of a line the point lies on.
       Positive value means one side, negative means the other, and 0 means on the line.
-     */
+    */
     function sideOfLine(p: Point, lineStart: Point, lineEnd: Point): number {
       return (lineEnd.x - lineStart.x) * (p.y - lineStart.y) -
              (lineEnd.y - lineStart.y) * (p.x - lineStart.x);
@@ -127,7 +142,7 @@ export default defineComponent({
     /*
       Calculates the intersection point between a segment (p1 -> p2) and a line (l1 -> l2).
       Returns null if there is no valid intersection within the segment.
-     */
+    */
     function lineSegmentIntersection(
       p1: Point, p2: Point,
       l1: Point, l2: Point
@@ -158,7 +173,7 @@ export default defineComponent({
 
     /*
       Removes duplicate points from an array based on a small threshold.
-     */
+    */
     function removeDuplicatePoints(points: Point[]): Point[] {
       const DUPLICATE_EPSILON = 1e-6;
       return points.filter((p1, i) =>
@@ -173,7 +188,7 @@ export default defineComponent({
     /*
       Cuts a polygon with a line defined by (lineStart, lineEnd) and returns the resulting polygons.
       If the cut does not produce valid polygons, returns the original polygon.
-     */
+    */
     function cutPolygon(
       polygon: PolygonData,
       lineStart: Point,
@@ -230,7 +245,7 @@ export default defineComponent({
     /*
       Creates a mosaic by iteratively cutting the initial polygon with randomly generated lines.
       @param numLines - Number of random lines used to cut the polygon.
-     */
+    */
     function createMosaic(numLines: number): PolygonData[] {
       let currentPolys: PolygonData[] = [createInitialPolygon()];
       const lines = createRandomLines(numLines);
@@ -249,14 +264,14 @@ export default defineComponent({
 
     /*
       Regenerates the mosaic by creating a new set of polygons.
-     */
+    */
     function regenerateMosaic() {
       polygons = createMosaic(15);
     }
 
     /*
       Easing function (easeInOutQuad) for smooth animation.
-     */
+    */
     function easeInOutQuad(t: number): number {
       return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
     }
@@ -264,7 +279,7 @@ export default defineComponent({
     /*
       Calculates the current displacement factor based on the elapsed time.
       Also regenerates the mosaic at the start of each new cycle.
-     */
+    */
     function getCurrentDisplacementFactor(timestamp: number): number {
       if (startTime === null) startTime = timestamp;
       const elapsed = (timestamp - startTime) % period;
@@ -291,22 +306,24 @@ export default defineComponent({
 
     /*
       Computes the displacement for a polygon based on its original position and the displacement factor.
-     */
+      The displacement is computed as the vector from the mosaic center multiplied by (finalScale - 1)*factor.
+    */
     function computeDisplacement(poly: PolygonData, factor: number): { dx: number; dy: number } {
-      // Calculate vector from mosaic center scaled by expansion factor
+      const mosaicCenter = { x: mosaicSize / 2, y: mosaicSize / 2 };
       const scaleVector = {
-        x: (poly.originalPosition.x - mosaicSize / 2) * expansionFactor,
-        y: (poly.originalPosition.y - mosaicSize / 2) * expansionFactor
+        x: poly.originalPosition.x - mosaicCenter.x,
+        y: poly.originalPosition.y - mosaicCenter.y
       };
+      const multiplier = (finalScale - 1) * factor; // At factor=1: displacement = 3 * (vector)
       return {
-        dx: scaleVector.x * factor,
-        dy: scaleVector.y * factor
+        dx: scaleVector.x * multiplier,
+        dy: scaleVector.y * multiplier
       };
     }
 
     /*
       Draws the mosaic on the canvas at the current animation frame.
-     */
+    */
     function draw(timestamp: number) {
       if (!canvas.value) return;
       const ctx = canvas.value.getContext('2d');
@@ -319,6 +336,7 @@ export default defineComponent({
 
       // Apply translation to center the mosaic within the canvas
       ctx.save();
+      const centerOffset = (canvasSize - mosaicSize) / 2;
       ctx.translate(centerOffset, centerOffset);
 
       // Get current displacement factor based on time
@@ -346,7 +364,7 @@ export default defineComponent({
 
     /*
       Main animation loop using requestAnimationFrame.
-     */
+    */
     function animate(timestamp: number) {
       draw(timestamp);
       requestAnimationFrame(animate);
