@@ -34,7 +34,7 @@ export default defineComponent({
     const mosaicSize = 400;
     const canvasSize = mosaicSize * 1.5;
     const period = 5000; // Animation period in ms
-    const finalScale = 4; // Final scaling factor (scale the square 4 times)
+    const finalScale = 1.5; // Final scaling factor (scale the square 4 times)
 
     // Ref for canvas element
     const canvas = ref<HTMLCanvasElement | null>(null);
